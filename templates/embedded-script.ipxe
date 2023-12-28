@@ -1,0 +1,49 @@
+#!ipxe
+
+:entry
+prompt --timeout 5000 Press any key within 5 seconds to open main menu && goto show_menu || goto boot_embedded
+
+:show_menu
+clear menu_choice
+menu raspi-pxe-server main menu
+item --gap Boot Options
+item boot_embedded ${space} Boot with embedded host configuration
+item boot_netbootxyz ${space} Boot to netboot.xyz menu
+item --gap iPXE Configuration
+item boot_local_describe ${space} View iPXE configuration
+choose menu_choice || goto exit_custom
+echo ${cls}
+goto ${menu_choice}
+goto exit_custom
+
+:boot_embedded
+dhcp
+chain http://${next-server}/${net0/mac}.ipxe || goto boot_default
+
+:boot_default
+echo Unable to load embedded host configuration
+echo Loading default.ipxe script instead
+dhcp
+chain http://${next-server}/default.ipxe || goto exit_error
+
+:boot_netbootxyz
+dhcp
+set conn_type https 
+chain --autofree https://boot.netboot.xyz/menu.ipxe || echo HTTPS failed... attempting HTTP... 
+set conn_type http 
+chain --autofree http://boot.netboot.xyz/menu.ipxe || echo HTTP failed, localbooting...
+goto exit_error
+
+:boot_local_describe
+config
+goto show_menu
+
+:exit_custom
+echo Exiting in 5 seconds
+sleep 5
+exit
+
+:exit_error
+echo An error occurred while chainloading next boot script
+sleep 10
+exit

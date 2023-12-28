@@ -1,0 +1,55 @@
+server:
+  hostname: netboot
+  username: ubuntu
+  password_hash: "$5$r3Kl6AKBqjA78VCX$4.Vuc56PR2faX3vLuqBxHxF796qiLhxuS4MacXtTt5C" # default password: 'ubuntu'
+  timezone: America/New_York
+
+  ssh_pwauth: true
+
+  services:
+    dhcp: 
+      enabled: true
+
+  metadata: null
+
+  network:
+    ipv4:
+      network: 192.168.9.0
+      ip_address: 192.168.9.2
+      prefix: 16
+      subnet: 255.255.255.0
+      gateway: 192.168.9.1
+      nameserver: 1.1.1.1
+      domain: pxe.lan
+      dhcp_start: 192.168.9.200
+      dhcp_end: 192.168.9.250
+
+  download_files:
+    - filename: harvester-v1.2.1-initrd-amd64
+      url: https://releases.rancher.com/harvester/v1.2.1/harvester-v1.2.1-initrd-amd64
+    - filename: harvester-v1.2.1-rootfs-amd64.squashfs
+      url: https://releases.rancher.com/harvester/v1.2.1/harvester-v1.2.1-rootfs-amd64.squashfs
+    - filename: harvester-v1.2.1-vmlinuz-amd64
+      url: https://releases.rancher.com/harvester/v1.2.1/harvester-v1.2.1-vmlinuz-amd64
+    - filename: harvester-v1.2.1-amd64.iso
+      url: https://releases.rancher.com/harvester/v1.2.1/harvester-v1.2.1-amd64.iso
+
+clients:
+  - mac_address: 00:00:00:00:00:00
+    hostname: client-node-1
+    ip_address: 192.168.9.100
+    ipxe_script: |
+      #!ipxe
+      kernel harvester-v1.2.1-vmlinuz-amd64 harvester.install.debug=true ip=dhcp biosdevname=0 net.ifnames=1 rd.cos.disable rd.noverifyssl console=tty1 root=live:http://192.168.9.2/harvester-v1.2.1-rootfs-amd64.squashfs harvester.install.automatic=true harvester.install.config_url=http://192.168.9.2/host-config/cluster-node-1.yml
+      initrd harvester-v1.2.1-initrd-amd64
+      boot
+
+default_script: |
+  #!ipxe
+
+  :default
+  echo This is the default script. No script was defined for MAC address.
+  sleep 5
+  goto default
+
+

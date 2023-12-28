@@ -1,0 +1,16 @@
+scheme_version: 1
+token: ...
+
+os:
+  hostname: cluster-node-1
+  password: ...
+  ntp_servers:
+  - 0.suse.pool.ntp.org
+  - 1.suse.pool.ntp.org
+  dns_nameservers:
+  - 1.1.1.1
+  - 8.8.8.8
+
+install:
+  mode: create
+  iso_url: http://192.168.9.2/harvester-v1.2.1-amd64.iso

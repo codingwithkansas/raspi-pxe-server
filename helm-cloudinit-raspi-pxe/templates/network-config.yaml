@@ -1,0 +1,11 @@
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: false
+      addresses:
+        - {{ .Values.server.network.ipv4.ip_address}}/{{ .Values.server.network.ipv4.prefix}}
+      gateway4: {{ .Values.server.network.ipv4.gateway}}
+      nameservers:
+        addresses:
+          - {{ .Values.server.network.ipv4.nameserver}}

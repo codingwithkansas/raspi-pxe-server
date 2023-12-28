@@ -1,0 +1,188 @@
+#cloud-config
+groups:
+  - cloud-users
+timezone: {{ .Values.server.timezone}}
+
+hostname: {{ .Values.server.hostname}}
+fqdn: {{ .Values.server.hostname}}.{{ .Values.server.network.ipv4.domain}}
+
+disable_root: false
+ssh_pwauth: {{ .Values.server.ssh_pwauth}}
+
+ssh_authorized_keys: {{ .Values.server.ssh_authorized_keys }}
+
+ssh_keys: {{ toYaml .Values.server.ssh_keys | nindent 2 }}
+
+no_ssh_fingerprints: false
+
+ssh:
+  emit_keys_to_console: false
+
+users:
+  - name: {{ .Values.server.username}}
+    primary_group: ubuntu
+    groups: users
+    lock_passwd: false
+    passwd: {{ .Values.server.password_hash}}
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+
+package_update: true
+package_upgrade: false
+packages:
+  - xinetd 
+  - tftpd 
+  - tftp 
+  - apache2 
+{{- if .Values.server.services.dhcp.enabled }}
+  - isc-dhcp-server
+{{- end }}
+
+write_files:
+ - path: /etc/xinetd.d/tftp.custom
+   content: |
+    service tftp
+    {
+    protocol        = udp
+    port            = 69
+    socket_type     = dgram
+    wait            = yes
+    user            = nobody
+    server          = /usr/sbin/in.tftpd
+    server_args     = /tftpboot
+    disable         = no
+    }
+
+ - path: /startup.sh
+   permissions: '0755'
+   content: |
+     #!/usr/bin/env bash
+
+     echo "$(date)" > /var/log/firstrun.runcmd-initialized
+
+     SEPARATOR="========================================"
+
+     function echo_header {
+         MSG="$1"
+         echo -e "\n\n\n$SEPARATOR\n$MSG\n$SEPARATOR\n"
+     }
+
+     function download_file {
+         TARGET_DIR="$1"
+         FILE_NAME="$2"
+         URL="$3"
+
+         mkdir -p "$TARGET_DIR/$FILE_NAME"
+         rm -r "$TARGET_DIR/$FILE_NAME"
+         curl --output "$TARGET_DIR/$FILE_NAME" "$URL" || echo "Unable to download additional file at $URL"
+     }
+
+     function first_run {
+         echo_header "Starting to execute first run script"
+
+         echo_header "Preparing TFTP boot files"
+         sudo chmod -R 777 /tftpboot
+         sudo chown -R nobody /tftpboot
+
+         echo_header "Configuring TFTP server"
+         mv /etc/xinetd.d/tftp.custom /etc/xinetd.d/tftp
+         service xinetd restart
+
+         echo_header "Configuring HTTP server document root configuration"
+         cat /etc/apache2/sites-enabled/000-default.conf | sed 's/\/var\/www\/html/\/tftpboot/' > /etc/apache2/sites-enabled/000-default.conf.tmp
+         mv /etc/apache2/sites-enabled/000-default.conf.tmp /etc/apache2/sites-enabled/000-default.conf
+         DOCUMENT_ROOT_POLICY="\t\<Directory \/tftpboot\/\>\n\t\tOptions Indexes FollowSymLinks MultiViews\n\t\tAllowOverride None\n\t\tRequire all granted\n\t\<\/Directory\>\\n<\/VirtualHost\>"
+         cat /etc/apache2/sites-enabled/000-default.conf | sed "s/<\/VirtualHost>/$DOCUMENT_ROOT_POLICY/" > /etc/apache2/sites-enabled/000-default.conf.tmp
+         mv /etc/apache2/sites-enabled/000-default.conf.tmp /etc/apache2/sites-enabled/000-default.conf
+         
+         echo_header "Configuring HTTP server runtime user as 'nobody:www-data'"
+         cat /etc/apache2/envvars | sed 's/export APACHE_RUN_USER=www-data/export APACHE_RUN_USER=nobody/' > /etc/apache2/envvars.tmp
+         mv /etc/apache2/envvars.tmp /etc/apache2/envvars
+         
+         echo_header "Reloading HTTP server configuration"
+         apachectl configtest
+         systemctl reload apache2
+
+         {{ if .Values.server.services.dhcp.enabled }}
+         echo_header "Configuring DHCP server"
+         mv /etc/dhcp/dhcpd.conf /etc/dhcp/dhcpd.conf.original
+         mv /etc/dhcp/dhcpd.conf.custom /etc/dhcp/dhcpd.conf
+         systemctl restart isc-dhcp-server
+         {{- end }}
+
+         ufw allow 80
+         ufw allow 69
+         ufw allow bootps
+         ufw allow 53/udp
+         ufw allow 53/tcp
+
+         echo_header "Downloading additional files"
+         {{ if .Values.server.download_files }}
+         {{- range $filedownload := .Values.server.download_files }}
+         download_file "/tftpboot" "{{ $filedownload.filename }}" "{{ $filedownload.url }}"
+         {{- end }}
+         {{- end }}
+     }
+
+     function exit_with_error {
+         MSG="$1"
+         echo_header "An unexpected error occurred"
+         echo -e "\tError: $MSG"
+         exit 1
+     }
+
+     function safe_first_run {
+         (first_run && exit 0) || exit_with_error "'first_run' function returned FAILURE exit code"
+     }
+
+     echo "$(date)" > /var/log/firstrun.started
+     safe_first_run 2>&1 | tee /var/log/firstrun.log
+     echo "$(date)" > /var/log/firstrun.completed
+
+{{ if .Values.server.services.dhcp.enabled }}
+ - path: /etc/dhcp/dhcpd.conf.custom
+   content: |
+    default-lease-time 600;
+    max-lease-time 7200;
+
+    subnet {{ .Values.server.network.ipv4.network }} netmask {{ .Values.server.network.ipv4.subnet }} {
+      range {{ .Values.server.network.ipv4.dhcp_start }} {{ .Values.server.network.ipv4.dhcp_end }};
+      option routers {{ .Values.server.network.ipv4.gateway }};
+      option domain-name-servers {{ .Values.server.network.ipv4.nameserver }};
+      option domain-name "{{ .Values.server.network.ipv4.domain }}";
+    }
+
+    next-server {{ .Values.server.network.ipv4.ip_address }};
+    if exists user-class and option user-class = "iPXE" {
+      filename undionly.kpxe;
+    } else {
+      filename undionly.kpxe;
+    }
+
+    {{ if .Values.clients }}
+    {{- range $pxeclient := .Values.clients }}
+    host {{ $pxeclient.hostname }} {
+      hardware ethernet {{ $pxeclient.mac_address }}
+      fixed-address {{ $pxeclient.ip_address }}
+    }
+    {{ end }}
+    {{- end }}
+{{- end}}
+
+{{ if .Values.clients }}
+{{- range $pxeclient := .Values.clients }}
+ - path: /tftpboot/{{ $pxeclient.mac_address }}.ipxe
+   content: |
+     {{- $pxeclient.ipxe_script | nindent 5 }}
+{{- end }}
+{{- end }}
+{{ if .Values.default_script }}
+ - path: /tftpboot/default.ipxe
+   content: |
+     {{- .Values.default_script | nindent 5 }}
+{{- end }}
+
+runcmd:
+ - chmod +x /startup.sh && /startup.sh
+
+bootcmd:
+ - echo "$(date)" > /var/log/firstrun.bootcmd-initialized
