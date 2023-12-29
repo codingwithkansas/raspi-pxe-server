@@ -9,7 +9,11 @@ function clean {
     PROJECT_DIR="$1"
     rm -rf "$PROJECT_DIR/$BUILD_DIR"
     rm -rf "$PROJECT_DIR/ipxe/build"
-    docker image rm -f "$(docker images -q $IPXE_DOCKER_BUILD_CTX_IMAGE)"
+    IMAGE_TO_REMOVE="$(docker images -q $IPXE_DOCKER_BUILD_CTX_IMAGE)"
+    if [[ ! -z "$IMAGE_TO_REMOVE" ]];
+    then
+        docker image rm "$IMAGE_TO_REMOVE"
+    fi
 }
 
 function initialize {
