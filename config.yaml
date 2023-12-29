@@ -51,5 +51,3 @@ default_script: |
   echo This is the default script. No script was defined for MAC address.
   sleep 5
   goto default
-
-

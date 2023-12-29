@@ -1,7 +1,7 @@
+RASPINIT_VERSION="main"
 BUILD_DIR="build"
 OUTPUT_FILENAME="raspipxe-0.1.0-ubuntu-22.04.3-arm64"
 BASE_IMAGE_URL="https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.3-preinstalled-server-arm64+raspi.img.xz"
-BASE_IMAGE="ubuntu-22.04.3-preinstalled-server-arm64+raspi.img"
 
 IPXE_DOCKER_BUILD_CTX_IMAGE="raspi-pxe-server--ipxe"
 
@@ -15,7 +15,7 @@ function clean {
 function initialize {
     PROJECT_DIR="$1"
     mkdir "$PROJECT_DIR/$BUILD_DIR"
-    git clone --depth 1 -b main "https://github.com/codingwithkansas/raspinit.git" "$PROJECT_DIR/$BUILD_DIR"
+    git clone --depth 1 -b "$RASPINIT_VERSION" "https://github.com/codingwithkansas/raspinit.git" "$PROJECT_DIR/$BUILD_DIR"
 }
 
 function build {
@@ -37,15 +37,10 @@ function build {
     helm template -s templates/metadata.yaml -f "$PROJECT_DIR/config.yaml" "$PROJECT_DIR/helm-cloudinit-raspi-pxe" | tail -n +3 > "$PROJECT_DIR/$BUILD_DIR/templates/boot-partition/metadata"
     helm template -s templates/network-config.yaml -f "$PROJECT_DIR/config.yaml" "$PROJECT_DIR/helm-cloudinit-raspi-pxe" | tail -n +3 > "$PROJECT_DIR/$BUILD_DIR/templates/boot-partition/network-config"
     helm template -s templates/user-data.yaml -f "$PROJECT_DIR/config.yaml" "$PROJECT_DIR/helm-cloudinit-raspi-pxe" | tail -n +3 > "$PROJECT_DIR/$BUILD_DIR/templates/boot-partition/user-data"
-    if [[ ! -f "$PROJECT_DIR/$BASE_IMAGE" ]];
-    then
-        curl --output "$PROJECT_DIR/$BASE_IMAGE" "$BASE_IMAGE_URL"
-    fi
-    cp "$PROJECT_DIR/$BASE_IMAGE" "$PROJECT_DIR/$BUILD_DIR/$BASE_IMAGE"
     cd "$PROJECT_DIR/$BUILD_DIR"
     jq -n --arg output_filename "$OUTPUT_FILENAME" \
-          --arg base_image "$BASE_IMAGE" \
-          '{output_filename: $output_filename, base_image: $base_image}' > "$PROJECT_DIR/$BUILD_DIR/config.json"
+          --arg base_image_url "$BASE_IMAGE_URL" \
+          '{output_filename: $output_filename, base_image_url: $base_image_url}' > "$PROJECT_DIR/$BUILD_DIR/config.json"
     make build
 }
 
